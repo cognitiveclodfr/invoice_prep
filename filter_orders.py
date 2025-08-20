@@ -96,6 +96,14 @@ def main():
     # Get all line items for these valid orders from the clean dataframe
     final_filtered_df = main_df[main_df['Name'].isin(valid_order_ids)].copy()
 
+    # --- Step 1: Propagate Fulfillment Dates ---
+    # Ensure all line items for an order have the same fulfillment date for consistent sorting
+    final_filtered_df['Fulfilled at'] = final_filtered_df.groupby('Name')['Fulfilled at'].transform(lambda x: x.ffill().bfill())
+
+    # --- Step 2: Implement New Sorting Logic ---
+    # Sort the results by fulfillment date, then by order name
+    final_filtered_df.sort_values(by=['Fulfilled at', 'Name'], inplace=True)
+
     print(f"Total line items in the final report: {len(final_filtered_df)}")
 
     # Step 5: Create and style the output XLSX file
