@@ -2,3 +2,5 @@ pandas
 PySide6
 pyinstaller
 openpyxl
+pytest
+pytest-qt
