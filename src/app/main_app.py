@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QTableView, QGroupBox, QFileDialog, QMessageBox
 )
 from PySide6.QtCore import QDate, Qt, QAbstractTableModel, QSortFilterProxyModel
-from calculator_logic import calculate_costs
+from .calculator_logic import calculate_costs
 
 class PandasModel(QAbstractTableModel):
     """A model to interface a pandas DataFrame with QTableView."""

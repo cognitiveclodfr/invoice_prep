@@ -33,18 +33,24 @@ def calculate_costs(filepath, first_sku_cost, next_sku_cost, unit_cost,
             date_filtered_df['Fulfilled at'] = pd.to_datetime(date_filtered_df['Fulfilled at'], errors='coerce')
             date_filtered_df.dropna(subset=['Fulfilled at'], inplace=True)
 
-            if not date_filtered_df.empty:
-                start_date = pd.Timestamp(start_date_str)
-                end_date = pd.Timestamp(end_date_str).replace(hour=23, minute=59, second=59)
-                source_tz = date_filtered_df['Fulfilled at'].dt.tz
-                if source_tz:
-                    start_date = start_date.tz_localize(source_tz)
-                    end_date = end_date.tz_localize(source_tz)
+            # Only proceed if the column is a datetime type after coercion
+            if pd.api.types.is_datetime64_any_dtype(date_filtered_df['Fulfilled at']):
+                if not date_filtered_df.empty:
+                    start_date = pd.Timestamp(start_date_str)
+                    end_date = pd.Timestamp(end_date_str).replace(hour=23, minute=59, second=59)
+                    source_tz = date_filtered_df['Fulfilled at'].dt.tz
+                    if source_tz:
+                        start_date = start_date.tz_localize(source_tz)
+                        end_date = end_date.tz_localize(source_tz)
 
-                date_filtered_df = date_filtered_df[(date_filtered_df['Fulfilled at'] >= start_date) & (date_filtered_df['Fulfilled at'] <= end_date)]
-                valid_order_names = date_filtered_df['Name'].unique()
-                fulfilled_df = fulfilled_df[fulfilled_df['Name'].isin(valid_order_names)].copy()
+                    date_filtered_df = date_filtered_df[(date_filtered_df['Fulfilled at'] >= start_date) & (date_filtered_df['Fulfilled at'] <= end_date)]
+                    valid_order_names = date_filtered_df['Name'].unique()
+                    fulfilled_df = fulfilled_df[fulfilled_df['Name'].isin(valid_order_names)].copy()
+                else:
+                    # If empty after dropping NaTs, means no valid dates in range
+                    fulfilled_df = pd.DataFrame(columns=fulfilled_df.columns)
             else:
+                # If the column could not be converted to datetime at all
                 fulfilled_df = pd.DataFrame(columns=fulfilled_df.columns)
 
         if fulfilled_df.empty:
@@ -77,8 +83,8 @@ def calculate_costs(filepath, first_sku_cost, next_sku_cost, unit_cost,
         order_summary_df = pd.DataFrame(order_summaries)
 
         # --- Final Data Preparation ---
-        total_cost_bgn = order_summary_df['Order Cost (BGN)'].sum()
-        total_units = order_summary_df['Total Units'].sum()
+        total_cost_bgn = order_summary_df['Order Cost (BGN)'].sum() if not order_summary_df.empty else 0
+        total_units = order_summary_df['Total Units'].sum() if not order_summary_df.empty else 0
 
         totals = {
             'processed_orders_count': len(order_summary_df),
