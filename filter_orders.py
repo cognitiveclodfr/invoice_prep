@@ -31,7 +31,13 @@ def main():
     start_date, end_date = get_dates_from_user()
     print(f"Script started. Filtering orders from {start_date} to {end_date}")
 
-    input_file = 'Example CSV/orders_export_1.csv'
+    # Build the path to the input file relative to the script's location
+    try:
+        script_dir = os.path.dirname(os.path.realpath(__file__))
+    except NameError:
+        # Fallback for interactive environments where __file__ is not defined
+        script_dir = os.getcwd()
+    input_file = os.path.join(script_dir, 'orders_export_1.csv')
 
     # Check for input file existence
     if not os.path.exists(input_file):
