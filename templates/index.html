@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Розрахунок вартості фулфілменту</title>
+    <style>
+        body { font-family: sans-serif; line-height: 1.6; padding: 20px; max-width: 800px; margin: auto; }
+        .container { background: #f4f4f4; padding: 20px; border-radius: 5px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; }
+        input[type="file"], input[type="number"], button { width: 100%; padding: 10px; border-radius: 3px; border: 1px solid #ddd; }
+        button { background-color: #28a745; color: white; cursor: pointer; font-size: 16px; }
+        button:hover { background-color: #218838; }
+        #results { margin-top: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 5px; background: #fff; }
+        #results h3 { margin-top: 0; }
+        .hidden { display: none; }
+        #total-cost { font-weight: bold; font-size: 1.2em; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Розрахунок вартості послуг фулфілменту</h1>
+        <form id="upload-form">
+            <div class="form-group">
+                <label for="csv-file">Завантажте CSV-файл із Shopify:</label>
+                <input type="file" id="csv-file" name="csv_file" accept=".csv" required>
+            </div>
+
+            <h2>Налаштування тарифів</h2>
+            <div class="form-group">
+                <label for="first-sku-cost">Вартість за першу унікальну позицію (SKU) в замовленні:</label>
+                <input type="number" id="first-sku-cost" name="first_sku_cost" value="10.00" step="0.01" required>
+            </div>
+            <div class="form-group">
+                <label for="next-sku-cost">Вартість за кожну НАСТУПНУ унікальну позицію (SKU):</label>
+                <input type="number" id="next-sku-cost" name="next_sku_cost" value="5.00" step="0.01" required>
+            </div>
+            <div class="form-group">
+                <label for="unit-cost">Вартість за кожну одиницю товару (за бройку):</label>
+                <input type="number" id="unit-cost" name="unit_cost" value="2.00" step="0.01" required>
+            </div>
+
+            <button type="submit">Розрахувати</button>
+        </form>
+
+        <div id="results" class="hidden">
+            <h3>Результати розрахунку</h3>
+            <p>Кількість оброблених (виконаних) замовлень: <span id="processed-orders"></span></p>
+            <p>Загальна кількість оброблених одиниць товару: <span id="total-units"></span></p>
+            <p>Загальна вартість до сплати: <span id="total-cost"></span> грн</p>
+        </div>
+        <div id="error-message" style="color: red; margin-top: 10px;"></div>
+    </div>
+
+    <script>
+        document.getElementById('upload-form').addEventListener('submit', async function(event) {
+            event.preventDefault();
+
+            const form = event.target;
+            const formData = new FormData(form);
+            const resultsDiv = document.getElementById('results');
+            const errorDiv = document.getElementById('error-message');
+            const button = form.querySelector('button');
+
+            resultsDiv.classList.add('hidden');
+            errorDiv.textContent = '';
+            button.disabled = true;
+            button.textContent = 'Обробка...';
+
+            try {
+                const response = await fetch('/calculate', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    document.getElementById('processed-orders').textContent = result.processed_orders;
+                    document.getElementById('total-units').textContent = result.total_units;
+                    document.getElementById('total-cost').textContent = result.total_cost.toFixed(2);
+                    resultsDiv.classList.remove('hidden');
+                } else {
+                    errorDiv.textContent = 'Помилка: ' + (result.error || 'Сталася невідома помилка.');
+                }
+            } catch (error) {
+                errorDiv.textContent = 'Помилка мережі або сервера. Спробуйте ще раз.';
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Розрахувати';
+            }
+        });
+    </script>
+</body>
+</html>
