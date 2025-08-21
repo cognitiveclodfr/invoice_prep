@@ -1,54 +1,91 @@
 <!DOCTYPE html>
-<html lang="uk">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Розрахунок вартості фулфілменту</title>
+    <title>Fulfillment Cost Calculator</title>
     <style>
-        body { font-family: sans-serif; line-height: 1.6; padding: 20px; max-width: 800px; margin: auto; }
+        body { font-family: sans-serif; line-height: 1.6; padding: 20px; max-width: 900px; margin: auto; }
         .container { background: #f4f4f4; padding: 20px; border-radius: 5px; }
         .form-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 5px; }
-        input[type="file"], input[type="number"], button { width: 100%; padding: 10px; border-radius: 3px; border: 1px solid #ddd; }
+        input[type="file"], input[type="number"], input[type="date"], button { width: 100%; padding: 10px; border-radius: 3px; border: 1px solid #ddd; box-sizing: border-box; }
+        .date-range { display: flex; gap: 10px; }
+        .date-range .form-group { flex: 1; }
         button { background-color: #28a745; color: white; cursor: pointer; font-size: 16px; }
         button:hover { background-color: #218838; }
         #results { margin-top: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 5px; background: #fff; }
         #results h3 { margin-top: 0; }
         .hidden { display: none; }
-        #total-cost { font-weight: bold; font-size: 1.2em; }
+        .summary-p { font-size: 1.1em; }
+        .summary-p span { font-weight: bold; }
+        #orders-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        #orders-table th, #orders-table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        #orders-table th { background-color: #f2f2f2; }
+        #table-filter { margin-top: 20px; width: 100%; padding: 10px; border-radius: 3px; border: 1px solid #ddd; box-sizing: border-box; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Розрахунок вартості послуг фулфілменту</h1>
+        <h1>Fulfillment Service Cost Calculator</h1>
         <form id="upload-form">
             <div class="form-group">
-                <label for="csv-file">Завантажте CSV-файл із Shopify:</label>
+                <label for="csv-file">Upload Shopify CSV File:</label>
                 <input type="file" id="csv-file" name="csv_file" accept=".csv" required>
             </div>
 
-            <h2>Налаштування тарифів</h2>
+            <div class="date-range">
+                <div class="form-group">
+                    <label for="start-date">Start Date:</label>
+                    <input type="date" id="start-date" name="start_date">
+                </div>
+                <div class="form-group">
+                    <label for="end-date">End Date:</label>
+                    <input type="date" id="end-date" name="end_date">
+                </div>
+            </div>
+
+            <h2>Tariff Settings (in BGN)</h2>
             <div class="form-group">
-                <label for="first-sku-cost">Вартість за першу унікальну позицію (SKU) в замовленні:</label>
+                <label for="first-sku-cost">Cost for the first unique SKU in an order:</label>
                 <input type="number" id="first-sku-cost" name="first_sku_cost" value="10.00" step="0.01" required>
             </div>
             <div class="form-group">
-                <label for="next-sku-cost">Вартість за кожну НАСТУПНУ унікальну позицію (SKU):</label>
+                <label for="next-sku-cost">Cost for each subsequent unique SKU:</label>
                 <input type="number" id="next-sku-cost" name="next_sku_cost" value="5.00" step="0.01" required>
             </div>
             <div class="form-group">
-                <label for="unit-cost">Вартість за кожну одиницю товару (за бройку):</label>
+                <label for="unit-cost">Cost for each unit of product:</label>
                 <input type="number" id="unit-cost" name="unit_cost" value="2.00" step="0.01" required>
             </div>
 
-            <button type="submit">Розрахувати</button>
+            <button type="submit">Calculate</button>
         </form>
 
         <div id="results" class="hidden">
-            <h3>Результати розрахунку</h3>
-            <p>Кількість оброблених (виконаних) замовлень: <span id="processed-orders"></span></p>
-            <p>Загальна кількість оброблених одиниць товару: <span id="total-units"></span></p>
-            <p>Загальна вартість до сплати: <span id="total-cost"></span> грн</p>
+            <h3>Calculation Results</h3>
+            <p class="summary-p">Processed Orders: <span id="processed-orders-count"></span></p>
+            <p class="summary-p">Total Units: <span id="total-units"></span></p>
+            <p class="summary-p">Total Cost (BGN): <span id="total-cost-bgn"></span></p>
+            <p class="summary-p">Total Cost (EUR): <span id="total-cost-eur"></span></p>
+
+            <hr>
+
+            <h3>Processed Orders Details</h3>
+            <input type="text" id="table-filter" placeholder="Filter by Order #...">
+            <table id="orders-table">
+                <thead>
+                    <tr>
+                        <th>Order #</th>
+                        <th>Unique SKUs</th>
+                        <th>Total Units</th>
+                        <th>Cost (BGN)</th>
+                    </tr>
+                </thead>
+                <tbody id="orders-table-body">
+                    <!-- Rows will be inserted here by JavaScript -->
+                </tbody>
+            </table>
         </div>
         <div id="error-message" style="color: red; margin-top: 10px;"></div>
     </div>
@@ -63,10 +100,18 @@
             const errorDiv = document.getElementById('error-message');
             const button = form.querySelector('button');
 
+            // Add date values to formData
+            const startDate = document.getElementById('start-date').value;
+            const endDate = document.getElementById('end-date').value;
+            if (startDate && endDate) {
+                formData.append('start_date', startDate);
+                formData.append('end_date', endDate);
+            }
+
             resultsDiv.classList.add('hidden');
             errorDiv.textContent = '';
             button.disabled = true;
-            button.textContent = 'Обробка...';
+            button.textContent = 'Processing...';
 
             try {
                 const response = await fetch('/calculate', {
@@ -77,18 +122,52 @@
                 const result = await response.json();
 
                 if (response.ok) {
-                    document.getElementById('processed-orders').textContent = result.processed_orders;
+                    // Populate summary
+                    document.getElementById('processed-orders-count').textContent = result.processed_orders_count;
                     document.getElementById('total-units').textContent = result.total_units;
-                    document.getElementById('total-cost').textContent = result.total_cost.toFixed(2);
+                    document.getElementById('total-cost-bgn').textContent = result.total_cost_bgn.toFixed(2);
+                    document.getElementById('total-cost-eur').textContent = result.total_cost_eur.toFixed(2);
+
+                    // Populate table
+                    const tableBody = document.getElementById('orders-table-body');
+                    tableBody.innerHTML = ''; // Clear previous results
+                    result.orders.forEach(order => {
+                        const row = `<tr>
+                            <td>${order.name}</td>
+                            <td>${order.unique_skus}</td>
+                            <td>${order.units}</td>
+                            <td>${order.cost_bgn.toFixed(2)}</td>
+                        </tr>`;
+                        tableBody.innerHTML += row;
+                    });
+
                     resultsDiv.classList.remove('hidden');
                 } else {
-                    errorDiv.textContent = 'Помилка: ' + (result.error || 'Сталася невідома помилка.');
+                    errorDiv.textContent = 'Error: ' + (result.error || 'An unknown error occurred.');
                 }
             } catch (error) {
-                errorDiv.textContent = 'Помилка мережі або сервера. Спробуйте ще раз.';
+                errorDiv.textContent = 'Network or server error. Please try again.';
             } finally {
                 button.disabled = false;
-                button.textContent = 'Розрахувати';
+                button.textContent = 'Calculate';
+            }
+        });
+
+        document.getElementById('table-filter').addEventListener('keyup', function(event) {
+            const filterText = event.target.value.toLowerCase();
+            const tableBody = document.getElementById('orders-table-body');
+            const rows = tableBody.getElementsByTagName('tr');
+
+            for (let i = 0; i < rows.length; i++) {
+                const orderNameCell = rows[i].getElementsByTagName('td')[0];
+                if (orderNameCell) {
+                    const orderName = orderNameCell.textContent || orderNameCell.innerText;
+                    if (orderName.toLowerCase().indexOf(filterText) > -1) {
+                        rows[i].style.display = '';
+                    } else {
+                        rows[i].style.display = 'none';
+                    }
+                }
             }
         });
     </script>
