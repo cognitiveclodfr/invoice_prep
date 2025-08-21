@@ -1,3 +1,4 @@
 pandas
 PySide6
 pyinstaller
+openpyxl

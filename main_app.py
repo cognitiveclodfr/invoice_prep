@@ -1,7 +1,7 @@
 import sys
 import pandas as pd
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QGridLayout,
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QGridLayout, QHBoxLayout,
     QPushButton, QLineEdit, QLabel, QDateEdit, QDoubleSpinBox,
     QTableView, QGroupBox, QFileDialog, QMessageBox
 )
@@ -22,7 +22,11 @@ class PandasModel(QAbstractTableModel):
 
     def data(self, index, role=Qt.DisplayRole):
         if index.isValid() and role == Qt.DisplayRole:
-            return str(self._dataframe.iloc[index.row(), index.column()])
+            # Format floating point numbers to 2 decimal places
+            value = self._dataframe.iloc[index.row(), index.column()]
+            if isinstance(value, float):
+                return f"{value:.2f}"
+            return str(value)
         return None
 
     def headerData(self, section, orientation, role=Qt.DisplayRole):
@@ -37,6 +41,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Fulfillment Cost Calculator")
         self.setGeometry(100, 100, 800, 700)
 
+        # To store results for export
+        self.results_data = {}
+
         # Main widget and layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -45,14 +52,12 @@ class MainWindow(QMainWindow):
         # --- Inputs Group ---
         inputs_group = QGroupBox("Inputs")
         inputs_layout = QGridLayout()
-
         self.filepath_edit = QLineEdit()
         self.filepath_edit.setReadOnly(True)
         self.browse_button = QPushButton("Browse...")
         inputs_layout.addWidget(QLabel("CSV File:"), 0, 0)
         inputs_layout.addWidget(self.filepath_edit, 0, 1, 1, 2)
         inputs_layout.addWidget(self.browse_button, 0, 3)
-
         self.start_date_edit = QDateEdit(calendarPopup=True)
         self.start_date_edit.setDate(QDate.currentDate().addMonths(-1))
         self.end_date_edit = QDateEdit(calendarPopup=True)
@@ -61,7 +66,6 @@ class MainWindow(QMainWindow):
         inputs_layout.addWidget(self.start_date_edit, 1, 1)
         inputs_layout.addWidget(QLabel("End Date:"), 1, 2)
         inputs_layout.addWidget(self.end_date_edit, 1, 3)
-
         inputs_group.setLayout(inputs_layout)
         main_layout.addWidget(inputs_group)
 
@@ -86,9 +90,24 @@ class MainWindow(QMainWindow):
         tariffs_group.setLayout(tariffs_layout)
         main_layout.addWidget(tariffs_group)
 
-        # --- Calculate Button ---
+        # --- SKU Filter ---
+        sku_filter_group = QGroupBox("SKU Filtering")
+        sku_filter_layout = QGridLayout()
+        self.exclude_skus_edit = QLineEdit()
+        self.exclude_skus_edit.setPlaceholderText("e.g., VIRTUAL-01, VIRTUAL-02")
+        sku_filter_layout.addWidget(QLabel("Exclude SKUs (comma-separated):"), 0, 0)
+        sku_filter_layout.addWidget(self.exclude_skus_edit, 0, 1)
+        sku_filter_group.setLayout(sku_filter_layout)
+        main_layout.addWidget(sku_filter_group)
+
+        # --- Action Buttons ---
+        action_layout = QHBoxLayout()
         self.calculate_button = QPushButton("Calculate Costs")
-        main_layout.addWidget(self.calculate_button)
+        self.export_button = QPushButton("Export to XLSX")
+        self.export_button.setEnabled(False)
+        action_layout.addWidget(self.calculate_button)
+        action_layout.addWidget(self.export_button)
+        main_layout.addLayout(action_layout)
 
         # --- Results Group ---
         results_group = QGroupBox("Results")
@@ -109,7 +128,7 @@ class MainWindow(QMainWindow):
         results_layout.addLayout(summary_layout)
 
         self.filter_edit = QLineEdit()
-        self.filter_edit.setPlaceholderText("Filter by Order #...")
+        self.filter_edit.setPlaceholderText("Filter by Order #, SKU, or Product Name...")
         self.orders_table = QTableView()
         self.orders_table.setSortingEnabled(True)
         results_layout.addWidget(self.filter_edit)
@@ -120,10 +139,11 @@ class MainWindow(QMainWindow):
         # Connections
         self.browse_button.clicked.connect(self.open_file_dialog)
         self.calculate_button.clicked.connect(self.run_calculation)
+        self.export_button.clicked.connect(self.export_to_xlsx)
         self.filter_edit.textChanged.connect(self.filter_table)
 
     def open_file_dialog(self):
-        filepath, _ = QFileDialog.getOpenFileName(self, "Open CSV", "", "CSV Files (*.csv)")
+        filepath, _ = QFileDialog.getOpenFileName(self, "Open CSV", "", "CSV Files (*.csv);;All Files (*)")
         if filepath:
             self.filepath_edit.setText(filepath)
 
@@ -136,46 +156,87 @@ class MainWindow(QMainWindow):
         start_date = self.start_date_edit.date().toString("yyyy-MM-dd")
         end_date = self.end_date_edit.date().toString("yyyy-MM-dd")
 
-        results = calculate_costs(
+        excluded_skus_str = self.exclude_skus_edit.text()
+        excluded_skus = [sku.strip() for sku in excluded_skus_str.split(',') if sku.strip()]
+
+        self.results_data = calculate_costs(
             filepath=filepath,
             first_sku_cost=self.first_sku_spinbox.value(),
             next_sku_cost=self.next_sku_spinbox.value(),
             unit_cost=self.unit_cost_spinbox.value(),
             start_date_str=start_date,
-            end_date_str=end_date
+            end_date_str=end_date,
+            excluded_skus=excluded_skus
         )
 
-        if results.get('error'):
-            QMessageBox.critical(self, "Error", results['error'])
+        if self.results_data.get('error'):
+            QMessageBox.critical(self, "Error", self.results_data['error'])
+            self.export_button.setEnabled(False)
         else:
-            self.processed_orders_value.setText(str(results['processed_orders_count']))
-            self.total_units_value.setText(str(results['total_units']))
-            self.total_cost_bgn_value.setText(f"{results['total_cost_bgn']:.2f}")
-            self.total_cost_eur_value.setText(f"{results['total_cost_eur']:.2f}")
+            totals = self.results_data['totals']
+            self.processed_orders_value.setText(str(totals['processed_orders_count']))
+            self.total_units_value.setText(str(totals['total_units']))
+            self.total_cost_bgn_value.setText(f"{totals['total_cost_bgn']:.2f}")
+            self.total_cost_eur_value.setText(f"{totals['total_cost_eur']:.2f}")
 
-            df = pd.DataFrame(results['orders'])
-            if not df.empty:
-                # Rename columns for display
-                df.rename(columns={
-                    'name': 'Order #',
-                    'unique_skus': 'Unique SKUs',
-                    'units': 'Total Units',
-                    'cost_bgn': 'Cost (BGN)'
-                }, inplace=True)
-
-            self.model = PandasModel(df)
+            line_item_df = self.results_data['line_item_df']
+            self.model = PandasModel(line_item_df)
 
             self.proxy_model = QSortFilterProxyModel()
             self.proxy_model.setSourceModel(self.model)
-            self.proxy_model.setFilterKeyColumn(0) # Filter on the first column 'Order #'
             self.proxy_model.setFilterCaseSensitivity(Qt.CaseInsensitive)
+            self.proxy_model.setFilterKeyColumn(-1) # Search all columns
 
             self.orders_table.setModel(self.proxy_model)
             self.orders_table.resizeColumnsToContents()
 
+            self.export_button.setEnabled(True)
+
     def filter_table(self, text):
         if hasattr(self, 'proxy_model'):
             self.proxy_model.setFilterRegularExpression(text)
+
+    def export_to_xlsx(self):
+        if not self.results_data or self.results_data.get('error'):
+            QMessageBox.warning(self, "Warning", "No valid data available to export.")
+            return
+
+        save_path, _ = QFileDialog.getSaveFileName(self, "Save Excel File", "", "Excel Files (*.xlsx)")
+        if not save_path:
+            return
+
+        try:
+            with pd.ExcelWriter(save_path, engine='openpyxl') as writer:
+                # Sheet 1: Detailed Line Items
+                self.results_data['line_item_df'].to_excel(writer, sheet_name='Filtered Line Items', index=False)
+
+                # Sheet 2: Per-Order Summary
+                self.results_data['order_summary_df'].to_excel(writer, sheet_name='Order Summaries', index=False)
+
+                # Sheet 3: Grand Totals
+                totals_df = pd.DataFrame([self.results_data['totals']])
+                totals_df.to_excel(writer, sheet_name='Grand Totals', index=False)
+
+                # Auto-adjust column widths for readability
+                for sheet_name in writer.sheets:
+                    worksheet = writer.sheets[sheet_name]
+                    for column in worksheet.columns:
+                        max_length = 0
+                        column_letter = column[0].column_letter
+                        for cell in column:
+                            try:
+                                if len(str(cell.value)) > max_length:
+                                    max_length = len(str(cell.value))
+                            except:
+                                pass
+                        adjusted_width = (max_length + 2)
+                        worksheet.column_dimensions[column_letter].width = adjusted_width
+
+            QMessageBox.information(self, "Success", f"Data successfully exported to {save_path}")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", f"An error occurred during export: {e}")
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
