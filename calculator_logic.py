@@ -19,20 +19,33 @@ def calculate_costs(filepath, first_sku_cost, next_sku_cost, unit_cost, start_da
 
         # Handle date filtering
         if start_date_str and end_date_str:
-            fulfilled_df['Fulfilled at'] = pd.to_datetime(fulfilled_df['Fulfilled at'], errors='coerce')
-            fulfilled_df = fulfilled_df.dropna(subset=['Fulfilled at'])
+            # Create a temporary copy for date processing, leaving original fulfilled_df intact
+            date_filtered_df = fulfilled_df.copy()
+            date_filtered_df['Fulfilled at'] = pd.to_datetime(date_filtered_df['Fulfilled at'], errors='coerce')
 
-            # Convert user-selected dates to pandas Timestamps
-            start_date = pd.Timestamp(start_date_str)
-            end_date = pd.Timestamp(end_date_str).replace(hour=23, minute=59, second=59)
+            # Drop rows that don't have a valid date *in the temporary copy*
+            date_filtered_df.dropna(subset=['Fulfilled at'], inplace=True)
 
-            # If the source data is timezone-aware, make the user's dates aware too
-            source_tz = fulfilled_df['Fulfilled at'].dt.tz
-            if source_tz:
-                start_date = start_date.tz_localize(source_tz)
-                end_date = end_date.tz_localize(source_tz)
+            if not date_filtered_df.empty:
+                # Perform timezone-aware comparison
+                start_date = pd.Timestamp(start_date_str)
+                end_date = pd.Timestamp(end_date_str).replace(hour=23, minute=59, second=59)
+                source_tz = date_filtered_df['Fulfilled at'].dt.tz
+                if source_tz:
+                    start_date = start_date.tz_localize(source_tz)
+                    end_date = end_date.tz_localize(source_tz)
 
-            fulfilled_df = fulfilled_df[(fulfilled_df['Fulfilled at'] >= start_date) & (fulfilled_df['Fulfilled at'] <= end_date)]
+                # Filter the temporary df to find which orders fall in the date range
+                date_filtered_df = date_filtered_df[(date_filtered_df['Fulfilled at'] >= start_date) & (date_filtered_df['Fulfilled at'] <= end_date)]
+
+                # Get the unique names of the orders that are within the date range
+                valid_order_names = date_filtered_df['Name'].unique()
+
+                # Filter the main DataFrame to get ALL rows for those valid orders
+                fulfilled_df = fulfilled_df[fulfilled_df['Name'].isin(valid_order_names)].copy()
+            else:
+                # If no rows have valid dates, the result is an empty dataframe
+                fulfilled_df = pd.DataFrame(columns=fulfilled_df.columns)
 
         if fulfilled_df.empty:
             return {
