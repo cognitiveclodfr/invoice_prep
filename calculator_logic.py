@@ -20,9 +20,18 @@ def calculate_costs(filepath, first_sku_cost, next_sku_cost, unit_cost, start_da
         # Handle date filtering
         if start_date_str and end_date_str:
             fulfilled_df['Fulfilled at'] = pd.to_datetime(fulfilled_df['Fulfilled at'], errors='coerce')
-            fulfilled_df = fulfilled_df.dropna(subset=['Fulfilled at']) # Drop rows where date conversion failed
+            fulfilled_df = fulfilled_df.dropna(subset=['Fulfilled at'])  # Drop rows where date conversion failed
+
+            # Make the 'Fulfilled at' column timezone-naive to prevent comparison errors
+            if pd.api.types.is_datetime64_any_dtype(fulfilled_df['Fulfilled at']) and fulfilled_df['Fulfilled at'].dt.tz is not None:
+                fulfilled_df['Fulfilled at'] = fulfilled_df['Fulfilled at'].dt.tz_localize(None)
+
             start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
             end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+
+            # Add time to end_date to make the range inclusive of the whole day
+            end_date = end_date.replace(hour=23, minute=59, second=59)
+
             fulfilled_df = fulfilled_df[(fulfilled_df['Fulfilled at'] >= start_date) & (fulfilled_df['Fulfilled at'] <= end_date)]
 
         if fulfilled_df.empty:
