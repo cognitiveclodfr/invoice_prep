@@ -1,15 +1,15 @@
-# Fulfillment Cost Calculator Application
+# Fulfillment Cost Calculator Desktop Application
 
-This project is a local single-page web application for automatically calculating the cost of fulfillment services based on exported data from Shopify.
+This project is a local desktop application for automatically calculating the cost of fulfillment services based on exported data from Shopify.
 
 ## Description
 
-The application allows users to upload a standard CSV order export file from Shopify, configure tariffs, and receive a calculation of the total cost for processing the orders.
+The application allows users to upload a standard CSV order export file from Shopify, filter orders by a fulfillment date range, configure tariffs, and receive a calculation of the total cost for processing the orders. The results are displayed in a filterable table.
 
 ## Technologies
 
-- **Backend**: Python, Flask, Pandas
-- **Frontend**: HTML, CSS, JavaScript
+- **Core Logic**: Python, Pandas
+- **GUI**: PySide6
 
 ## CSV File Requirements
 
@@ -38,17 +38,15 @@ For the application to work correctly, the uploaded CSV file must contain the fo
 
 4.  **Launch the application:**
     ```bash
-    python app.py
+    python main_app.py
     ```
-
-5.  **Open a web browser** and navigate to the address shown in the terminal (usually `http://127.0.0.1:5000`).
 
 ## How to Use
 
-1.  Open the application page in your browser.
-2.  Click the "Choose File" button (or similar) and select your `.csv` export file from Shopify.
-3.  Optionally, select a "Start Date" and "End Date" to filter orders by their fulfillment date. If no dates are selected, all fulfilled orders from the file will be processed.
+1.  Launch the application by running the `main_app.py` script.
+2.  Click the "Browse..." button to open a file dialog and select your `.csv` export file from Shopify.
+3.  Select a "Start Date" and "End Date" to filter orders by their fulfillment date.
 4.  Check or change the tariff values (in BGN) in the corresponding fields.
-5.  Click the "Calculate" button.
-6.  The calculation results will appear below, showing summary totals and a detailed table of the processed orders.
-7.  You can type in the "Filter by Order #" box to quickly search for specific orders in the results table.
+5.  Click the "Calculate Costs" button.
+6.  The calculation results will appear in the "Results" section, showing summary totals and a detailed table of the processed orders.
+7.  You can type in the filter box above the table to quickly search for specific orders.
