@@ -29,7 +29,7 @@ def create_test_csv_for_ui(tmp_path):
     csv_path.write_text(csv_content)
     return str(csv_path)
 
-def test_full_ui_flow(app, create_test_csv_for_ui):
+def test_full_ui_flow(qtbot, app, create_test_csv_for_ui):
     """Test the full user flow programmatically."""
     # Expected results
     expected_orders = "2"
@@ -49,7 +49,13 @@ def test_full_ui_flow(app, create_test_csv_for_ui):
     # 3. Simulate clicking the calculate button
     app.calculate_button.click()
 
-    # 4. Assert that the UI updated correctly
+    # 4. Wait for the worker's finished signal before asserting
+    qtbot.waitSignal(app.worker.finished, timeout=5000)
+
+    # 5. Wait for the UI to update by checking one of the result labels
+    qtbot.waitUntil(lambda: app.processed_orders_value.text() == expected_orders, timeout=1000)
+
+    # 6. Assert that the UI updated correctly
     assert app.processed_orders_value.text() == expected_orders
     assert app.total_units_value.text() == expected_units
     assert app.total_cost_bgn_value.text() == expected_bgn

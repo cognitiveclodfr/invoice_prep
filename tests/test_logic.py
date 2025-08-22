@@ -26,6 +26,7 @@ def test_successful_calculation(create_test_csv):
     results = calculate_costs(
         filepath=create_test_csv,
         first_sku_cost=10, next_sku_cost=5, unit_cost=2,
+        eur_to_bgn_rate=1.95583,
         start_date_str="2025-07-01", end_date_str="2025-07-31"
     )
     assert results['error'] is None
@@ -40,6 +41,7 @@ def test_sku_exclusion(create_test_csv):
     results = calculate_costs(
         filepath=create_test_csv,
         first_sku_cost=10, next_sku_cost=5, unit_cost=2,
+        eur_to_bgn_rate=1.95583,
         start_date_str="2025-07-01", end_date_str="2025-07-31",
         excluded_skus=["VIRTUAL-01"]
     )
@@ -55,14 +57,14 @@ def test_missing_column(tmp_path):
     csv_content = "Name,Fulfillment Status\n#1,fulfilled"
     csv_path = tmp_path / "bad_data.csv"
     csv_path.write_text(csv_content)
-    results = calculate_costs(str(csv_path), 10, 5, 2)
+    results = calculate_costs(str(csv_path), 10, 5, 2, 1.95583)
     assert 'Missing required column' in results['error']
 
 # Test case 4: Empty file
 def test_empty_file(tmp_path):
     csv_path = tmp_path / "empty.csv"
     csv_path.touch()
-    results = calculate_costs(str(csv_path), 10, 5, 2)
+    results = calculate_costs(str(csv_path), 10, 5, 2, 1.95583)
     # This might raise an exception in pandas read_csv, which is caught
     assert results['error'] is not None
 
@@ -73,7 +75,7 @@ def test_no_fulfilled_orders(tmp_path):
 """
     csv_path = tmp_path / "no_fulfilled.csv"
     csv_path.write_text(csv_content)
-    results = calculate_costs(str(csv_path), 10, 5, 2)
+    results = calculate_costs(str(csv_path), 10, 5, 2, 1.95583)
     assert results['error'] is None
     assert results['totals']['processed_orders_count'] == 0
 
@@ -83,6 +85,7 @@ def test_split_date_order(create_test_csv):
     results = calculate_costs(
         filepath=create_test_csv,
         first_sku_cost=10, next_sku_cost=5, unit_cost=2,
+        eur_to_bgn_rate=1.95583,
         start_date_str="2025-07-01", end_date_str="2025-07-31"
     )
     # Expected: Order #6 should be processed, but only with SKU-G, not SKU-H.
@@ -103,6 +106,7 @@ def test_boundary_dates(create_test_csv):
     results = calculate_costs(
         filepath=create_test_csv,
         first_sku_cost=10, next_sku_cost=5, unit_cost=2,
+        eur_to_bgn_rate=1.95583,
         start_date_str="2025-07-31", end_date_str="2025-07-31"
     )
     # Only SKU-G from order #6 should be included.
