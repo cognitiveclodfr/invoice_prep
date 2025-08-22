@@ -29,6 +29,7 @@ def test_performance_with_large_file(tmp_path):
     results = calculate_costs(
         filepath=str(large_csv_path),
         first_sku_cost=10, next_sku_cost=5, unit_cost=2,
+        eur_to_bgn_rate=1.95583,
         start_date_str="2025-07-01", end_date_str="2025-07-31"
     )
 

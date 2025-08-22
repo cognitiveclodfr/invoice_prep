@@ -70,7 +70,12 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Fulfillment Cost Calculator")
         self.setGeometry(100, 100, 800, 700)
+
+        # To store results and thread objects
         self.results_data = {}
+        self.thread = None
+        self.worker = None
+
         self.setup_ui()
         self.connect_signals()
 
@@ -79,7 +84,6 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
 
-        # ... (UI setup is broken into methods for clarity) ...
         self.create_inputs_group(main_layout)
         self.create_tariffs_group(main_layout)
         self.create_sku_filter_group(main_layout)
