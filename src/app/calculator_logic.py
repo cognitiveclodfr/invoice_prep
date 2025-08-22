@@ -1,6 +1,9 @@
 import pandas as pd
 from datetime import datetime
 
+# Default service SKUs to always exclude
+VIRTUAL_SKUS_TO_EXCLUDE = ['parcel-protection']
+
 def calculate_costs(filepath, first_sku_cost, next_sku_cost, unit_cost, eur_to_bgn_rate,
                     start_date_str=None, end_date_str=None, excluded_skus=None):
     """
@@ -23,30 +26,33 @@ def calculate_costs(filepath, first_sku_cost, next_sku_cost, unit_cost, eur_to_b
         # 1. Filter by status
         processed_df = df[df['Fulfillment Status'] == 'fulfilled'].copy()
 
-        # 2. Filter by date range
+        # 2. Filter by date range (if provided)
         if start_date_str and end_date_str:
+            # Coerce dates, dropping rows that fail to parse
             processed_df['Fulfilled at'] = pd.to_datetime(processed_df['Fulfilled at'], errors='coerce')
             processed_df.dropna(subset=['Fulfilled at'], inplace=True)
 
-            # Per user request, simplify by removing timezone info before comparison
+            # Proceed only if the column is a datetime type
             if pd.api.types.is_datetime64_any_dtype(processed_df['Fulfilled at']):
+                # Simplify by removing timezone info before comparison
                 if processed_df['Fulfilled at'].dt.tz is not None:
                     processed_df['Fulfilled at'] = processed_df['Fulfilled at'].dt.tz_localize(None)
 
                 start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
                 end_date = datetime.strptime(end_date_str, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
 
+                # Apply the date filter directly
                 processed_df = processed_df[
                     (processed_df['Fulfilled at'] >= start_date) &
                     (processed_df['Fulfilled at'] <= end_date)
-                ]
+                ].copy()
 
-        # 3. Filter by excluded SKUs
-        if excluded_skus:
-            processed_df = processed_df[~processed_df['Lineitem sku'].isin(excluded_skus)]
+        # 3. Combine and filter by excluded SKUs
+        final_excluded_skus = excluded_skus + VIRTUAL_SKUS_TO_EXCLUDE
+        if final_excluded_skus:
+            processed_df = processed_df[~processed_df['Lineitem sku'].isin(final_excluded_skus)]
 
         # --- All filters applied. Now perform calculations on the final processed_df ---
-
         if processed_df.empty:
             return {'totals': {'processed_orders_count': 0, 'total_units': 0, 'total_cost_bgn': 0.0, 'total_cost_eur': 0.0},
                     'order_summary_df': pd.DataFrame(),
@@ -80,8 +86,11 @@ def calculate_costs(filepath, first_sku_cost, next_sku_cost, unit_cost, eur_to_b
         total_cost_bgn = order_summary_df['Order Cost (BGN)'].sum() if not order_summary_df.empty else 0
         total_units = order_summary_df['Total Units'].sum() if not order_summary_df.empty else 0
 
+        # Get the unique order names from the final processed data
+        final_order_count = processed_df['Name'].nunique()
+
         totals = {
-            'processed_orders_count': len(order_summary_df),
+            'processed_orders_count': final_order_count,
             'total_units': int(total_units),
             'total_cost_bgn': round(total_cost_bgn, 2),
             'total_cost_eur': round(total_cost_bgn / eur_to_bgn_rate, 2) if eur_to_bgn_rate else 0
