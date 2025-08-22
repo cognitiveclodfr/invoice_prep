@@ -65,7 +65,7 @@ def test_full_ui_flow(qtbot, app, create_test_csv_for_ui):
     model = app.orders_table.model()
     assert model.rowCount() == expected_table_rows
 
-    # 5. Test the table filter
+    # 7. Test the table filter
     app.filter_edit.setText("#101")
     assert model.rowCount() == 1
 
