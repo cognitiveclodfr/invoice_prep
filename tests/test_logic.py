@@ -31,15 +31,12 @@ def test_successful_calculation(create_test_csv):
         start_date_str="2025-07-01", end_date_str="2025-07-31"
     )
     assert results['error'] is None
-    # With sequential filtering, only items from July are included.
-    # parcel-protection is auto-excluded.
-    # Orders included: #1, #3, #6 (only SKU-G), #7 (only SKU-I)
     assert results['totals']['processed_orders_count'] == 4
-    assert results['totals']['total_units'] == 9 # 2(#1) + 5(#3) + 1(#6) + 1(#7)
-    assert results['totals']['total_cost_bgn'] == 63.00 # 14(#1) + 25(#3) + 12(#6) + 12(#7)
+    assert results['totals']['total_units'] == 9
+    assert results['totals']['total_cost_bgn'] == 63.00
     assert len(results['line_item_df']) == 5
 
-# Test case 2: SKU exclusion
+# Test case 2: SKU exclusion by user
 def test_sku_exclusion(create_test_csv):
     results = calculate_costs(
         filepath=create_test_csv,
@@ -49,10 +46,9 @@ def test_sku_exclusion(create_test_csv):
         excluded_skus=["VIRTUAL-01"]
     )
     assert results['error'] is None
-    # VIRTUAL-01 is excluded by user, parcel-protection is auto-excluded.
     assert results['totals']['processed_orders_count'] == 4
-    assert results['totals']['total_units'] == 5 # 2(#1) + 1(#3) + 1(#6) + 1(#7)
-    assert results['totals']['total_cost_bgn'] == 50.00 # 14(#1) + 12(#3) + 12(#6) + 12(#7)
+    assert results['totals']['total_units'] == 5
+    assert results['totals']['total_cost_bgn'] == 50.00
     assert len(results['line_item_df']) == 4
 
 # Test case 3: Missing column
@@ -81,7 +77,7 @@ def test_no_fulfilled_orders(tmp_path):
     assert results['error'] is None
     assert results['totals']['processed_orders_count'] == 0
 
-# Test case 6: Order with items split across date boundaries
+# Test case 6: Correctly handles split-date orders
 def test_split_date_order(create_test_csv):
     """Ensures only line items within the date range are processed."""
     results = calculate_costs(

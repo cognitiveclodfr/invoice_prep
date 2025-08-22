@@ -28,20 +28,17 @@ def calculate_costs(filepath, first_sku_cost, next_sku_cost, unit_cost, eur_to_b
 
         # 2. Filter by date range (if provided)
         if start_date_str and end_date_str:
-            # Coerce dates, dropping rows that fail to parse
             processed_df['Fulfilled at'] = pd.to_datetime(processed_df['Fulfilled at'], errors='coerce')
             processed_df.dropna(subset=['Fulfilled at'], inplace=True)
 
-            # Proceed only if the column is a datetime type
             if pd.api.types.is_datetime64_any_dtype(processed_df['Fulfilled at']):
-                # Simplify by removing timezone info before comparison
                 if processed_df['Fulfilled at'].dt.tz is not None:
                     processed_df['Fulfilled at'] = processed_df['Fulfilled at'].dt.tz_localize(None)
 
                 start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
                 end_date = datetime.strptime(end_date_str, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
 
-                # Apply the date filter directly
+                # Apply the date filter directly to the DataFrame
                 processed_df = processed_df[
                     (processed_df['Fulfilled at'] >= start_date) &
                     (processed_df['Fulfilled at'] <= end_date)
@@ -61,7 +58,6 @@ def calculate_costs(filepath, first_sku_cost, next_sku_cost, unit_cost, eur_to_b
 
         # --- Calculations ---
         order_summaries = []
-        # Group by Name on the *final, fully filtered* DataFrame
         for order_name, order_group in processed_df.groupby('Name'):
             unique_skus = order_group['Lineitem sku'].nunique()
             order_units = order_group['Lineitem quantity'].sum()
@@ -80,13 +76,11 @@ def calculate_costs(filepath, first_sku_cost, next_sku_cost, unit_cost, eur_to_b
                 'Order Cost (BGN)': round(order_cost_bgn, 2)
             })
 
-        order_summary_df = pd.DataFrame(order_summaries)
+        order_summary_df = pd.DataFrame(order_summaries) if order_summaries else pd.DataFrame()
 
         # --- Final Data Preparation ---
         total_cost_bgn = order_summary_df['Order Cost (BGN)'].sum() if not order_summary_df.empty else 0
         total_units = order_summary_df['Total Units'].sum() if not order_summary_df.empty else 0
-
-        # Get the unique order names from the final processed data
         final_order_count = processed_df['Name'].nunique()
 
         totals = {
@@ -96,7 +90,6 @@ def calculate_costs(filepath, first_sku_cost, next_sku_cost, unit_cost, eur_to_b
             'total_cost_eur': round(total_cost_bgn / eur_to_bgn_rate, 2) if eur_to_bgn_rate else 0
         }
 
-        # The line_item_df is now the final, fully filtered processed_df
         line_item_df = processed_df[['Name', 'Fulfilled at', 'Lineitem sku', 'Lineitem name', 'Lineitem quantity']].copy()
         line_item_df.rename(columns={
             'Name': 'Order #',
