@@ -1,13 +1,11 @@
 import pandas as pd
 from datetime import datetime
 
-EUR_TO_BGN_RATE = 1.95583
-
-def calculate_costs(filepath, first_sku_cost, next_sku_cost, unit_cost,
+def calculate_costs(filepath, first_sku_cost, next_sku_cost, unit_cost, eur_to_bgn_rate,
                     start_date_str=None, end_date_str=None, excluded_skus=None):
     """
     Processes a Shopify CSV file to calculate fulfillment costs.
-    Returns a dictionary containing detailed results for export and display.
+    Applies all filters sequentially before performing calculations.
     """
     if excluded_skus is None:
         excluded_skus = []
@@ -20,40 +18,36 @@ def calculate_costs(filepath, first_sku_cost, next_sku_cost, unit_cost,
             if col not in df.columns:
                 return {'error': f'Missing required column: {col}'}
 
-        # --- Initial Filtering ---
-        fulfilled_df = df[df['Fulfillment Status'] == 'fulfilled'].copy()
+        # --- Sequentially build the filtered DataFrame ---
 
-        # Filter out excluded SKUs before any calculations
-        if excluded_skus:
-            fulfilled_df = fulfilled_df[~fulfilled_df['Lineitem sku'].isin(excluded_skus)]
+        # 1. Filter by status
+        processed_df = df[df['Fulfillment Status'] == 'fulfilled'].copy()
 
-        # --- Date Filtering ---
+        # 2. Filter by date range
         if start_date_str and end_date_str:
-            date_filtered_df = fulfilled_df.copy()
-            date_filtered_df['Fulfilled at'] = pd.to_datetime(date_filtered_df['Fulfilled at'], errors='coerce')
-            date_filtered_df.dropna(subset=['Fulfilled at'], inplace=True)
+            processed_df['Fulfilled at'] = pd.to_datetime(processed_df['Fulfilled at'], errors='coerce')
+            processed_df.dropna(subset=['Fulfilled at'], inplace=True)
 
-            # Only proceed if the column is a datetime type after coercion
-            if pd.api.types.is_datetime64_any_dtype(date_filtered_df['Fulfilled at']):
-                if not date_filtered_df.empty:
-                    start_date = pd.Timestamp(start_date_str)
-                    end_date = pd.Timestamp(end_date_str).replace(hour=23, minute=59, second=59)
-                    source_tz = date_filtered_df['Fulfilled at'].dt.tz
-                    if source_tz:
-                        start_date = start_date.tz_localize(source_tz)
-                        end_date = end_date.tz_localize(source_tz)
+            # Per user request, simplify by removing timezone info before comparison
+            if pd.api.types.is_datetime64_any_dtype(processed_df['Fulfilled at']):
+                if processed_df['Fulfilled at'].dt.tz is not None:
+                    processed_df['Fulfilled at'] = processed_df['Fulfilled at'].dt.tz_localize(None)
 
-                    date_filtered_df = date_filtered_df[(date_filtered_df['Fulfilled at'] >= start_date) & (date_filtered_df['Fulfilled at'] <= end_date)]
-                    valid_order_names = date_filtered_df['Name'].unique()
-                    fulfilled_df = fulfilled_df[fulfilled_df['Name'].isin(valid_order_names)].copy()
-                else:
-                    # If empty after dropping NaTs, means no valid dates in range
-                    fulfilled_df = pd.DataFrame(columns=fulfilled_df.columns)
-            else:
-                # If the column could not be converted to datetime at all
-                fulfilled_df = pd.DataFrame(columns=fulfilled_df.columns)
+                start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+                end_date = datetime.strptime(end_date_str, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
 
-        if fulfilled_df.empty:
+                processed_df = processed_df[
+                    (processed_df['Fulfilled at'] >= start_date) &
+                    (processed_df['Fulfilled at'] <= end_date)
+                ]
+
+        # 3. Filter by excluded SKUs
+        if excluded_skus:
+            processed_df = processed_df[~processed_df['Lineitem sku'].isin(excluded_skus)]
+
+        # --- All filters applied. Now perform calculations on the final processed_df ---
+
+        if processed_df.empty:
             return {'totals': {'processed_orders_count': 0, 'total_units': 0, 'total_cost_bgn': 0.0, 'total_cost_eur': 0.0},
                     'order_summary_df': pd.DataFrame(),
                     'line_item_df': pd.DataFrame(),
@@ -61,8 +55,8 @@ def calculate_costs(filepath, first_sku_cost, next_sku_cost, unit_cost,
 
         # --- Calculations ---
         order_summaries = []
-
-        for order_name, order_group in fulfilled_df.groupby('Name'):
+        # Group by Name on the *final, fully filtered* DataFrame
+        for order_name, order_group in processed_df.groupby('Name'):
             unique_skus = order_group['Lineitem sku'].nunique()
             order_units = order_group['Lineitem quantity'].sum()
 
@@ -90,11 +84,11 @@ def calculate_costs(filepath, first_sku_cost, next_sku_cost, unit_cost,
             'processed_orders_count': len(order_summary_df),
             'total_units': int(total_units),
             'total_cost_bgn': round(total_cost_bgn, 2),
-            'total_cost_eur': round(total_cost_bgn / EUR_TO_BGN_RATE, 2)
+            'total_cost_eur': round(total_cost_bgn / eur_to_bgn_rate, 2) if eur_to_bgn_rate else 0
         }
 
-        # Prepare line item df for display and export
-        line_item_df = fulfilled_df[['Name', 'Fulfilled at', 'Lineitem sku', 'Lineitem name', 'Lineitem quantity']].copy()
+        # The line_item_df is now the final, fully filtered processed_df
+        line_item_df = processed_df[['Name', 'Fulfilled at', 'Lineitem sku', 'Lineitem name', 'Lineitem quantity']].copy()
         line_item_df.rename(columns={
             'Name': 'Order #',
             'Fulfilled at': 'Fulfilled Date',
@@ -102,7 +96,6 @@ def calculate_costs(filepath, first_sku_cost, next_sku_cost, unit_cost,
             'Lineitem name': 'Product Name',
             'Lineitem quantity': 'Quantity'
         }, inplace=True)
-
 
         return {
             'totals': totals,

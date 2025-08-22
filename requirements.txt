@@ -1,6 +1,20 @@
-pandas
-PySide6
-pyinstaller
-openpyxl
-pytest
-pytest-qt
+# Main Application
+openpyxl==3.1.5
+pandas==2.3.1
+PySide6==6.9.1
+
+# Build Tools
+pyinstaller==6.15.0
+
+# Testing
+pytest==8.4.1
+pytest-qt==4.5.0
+
+# Core Dependencies (auto-installed, good to pin)
+numpy==2.3.2
+python-dateutil==2.9.0.post0
+shiboken6==6.9.1
+et-xmlfile==2.0.0
+pytz==2025.2
+six==1.17.0
+tzdata==2025.2

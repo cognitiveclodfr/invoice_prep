@@ -54,10 +54,11 @@ For the application to work correctly, the uploaded CSV file must contain the fo
 1.  Launch the application by running the `main.py` script.
 2.  Click the "Browse..." button to select your `.csv` export file.
 3.  Select a "Start Date" and "End Date" to filter orders.
-4.  Optionally, enter SKUs to exclude (comma-separated).
-5.  Click "Calculate Costs" to process the data.
-6.  View the results in the summary panel and the detailed table.
-7.  Click "Export to XLSX" to save the results to an Excel file.
+4.  Adjust the tariffs and the EUR to BGN exchange rate in the settings area if needed.
+5.  Optionally, enter SKUs to exclude from the calculation (comma-separated).
+6.  Click "Calculate Costs" to process the data. The UI will remain responsive while calculating.
+7.  View the results in the summary panel and the detailed table.
+8.  Click "Export to XLSX" to save a multi-sheet Excel report.
 
 ## Running Tests
 
