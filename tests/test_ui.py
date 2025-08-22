@@ -67,7 +67,9 @@ def test_full_ui_flow(qtbot, app, create_test_csv_for_ui):
 
     # 7. Test the table filter
     app.filter_edit.setText("#101")
-    assert model.rowCount() == 1
+    qtbot.waitUntil(lambda: app.orders_table.model().rowCount() == 1, timeout=1000)
+    assert app.orders_table.model().rowCount() == 1
 
     app.filter_edit.setText("") # Clear filter
-    assert model.rowCount() == 2
+    qtbot.waitUntil(lambda: app.orders_table.model().rowCount() == 2, timeout=1000)
+    assert app.orders_table.model().rowCount() == 2

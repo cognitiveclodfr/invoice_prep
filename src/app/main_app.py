@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
     QPushButton, QLineEdit, QLabel, QDateEdit, QDoubleSpinBox,
     QTableView, QGroupBox, QFileDialog, QMessageBox
 )
-from PySide6.QtCore import QDate, Qt, QAbstractTableModel, QSortFilterProxyModel, QObject, Signal, QThread
+from PySide6.QtCore import QDate, Qt, QAbstractTableModel, QSortFilterProxyModel, QObject, Signal, QThread, QTimer
 from .calculator_logic import calculate_costs
 
 # --- Worker for background processing ---
@@ -71,10 +71,14 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Fulfillment Cost Calculator")
         self.setGeometry(100, 100, 800, 700)
 
-        # To store results and thread objects
         self.results_data = {}
         self.thread = None
         self.worker = None
+
+        # Debounce timer for the filter
+        self.filter_timer = QTimer(self)
+        self.filter_timer.setSingleShot(True)
+        self.filter_timer.setInterval(300) # 300ms delay
 
         self.setup_ui()
         self.connect_signals()
@@ -141,7 +145,7 @@ class MainWindow(QMainWindow):
         sku_filter_group = QGroupBox("SKU Filtering")
         sku_filter_layout = QGridLayout()
         self.exclude_skus_edit = QLineEdit()
-        self.exclude_skus_edit.setPlaceholderText("e.g., VIRTUAL-01, VIRTUAL-02")
+        self.exclude_skus_edit.setPlaceholderText("e.g., VIRTUAL-01, parcel-protection")
         sku_filter_layout.addWidget(QLabel("Exclude SKUs (comma-separated):"), 0, 0)
         sku_filter_layout.addWidget(self.exclude_skus_edit, 0, 1)
         sku_filter_group.setLayout(sku_filter_layout)
@@ -186,7 +190,9 @@ class MainWindow(QMainWindow):
         self.browse_button.clicked.connect(self.open_file_dialog)
         self.calculate_button.clicked.connect(self.run_calculation)
         self.export_button.clicked.connect(self.export_to_xlsx)
-        self.filter_edit.textChanged.connect(self.filter_table)
+        # Debounced filter
+        self.filter_edit.textChanged.connect(self.filter_timer.start)
+        self.filter_timer.timeout.connect(self.apply_filter)
 
     def open_file_dialog(self):
         filepath, _ = QFileDialog.getOpenFileName(self, "Open CSV", "", "CSV Files (*.csv);;All Files (*)")
@@ -249,8 +255,10 @@ class MainWindow(QMainWindow):
         self.calculate_button.setText("Calculate Costs")
         self.export_button.setEnabled(False)
 
-    def filter_table(self, text):
+    def apply_filter(self):
+        """Applies the filter to the table view."""
         if hasattr(self, 'proxy_model'):
+            text = self.filter_edit.text()
             self.proxy_model.setFilterRegularExpression(text)
 
     def export_to_xlsx(self):
@@ -264,16 +272,26 @@ class MainWindow(QMainWindow):
 
         try:
             with pd.ExcelWriter(save_path, engine='openpyxl') as writer:
-                self.results_data['line_item_df'].to_excel(writer, sheet_name='Filtered Line Items', index=False)
+                # Sheet 1: Get visible data from proxy model
+                if hasattr(self, 'proxy_model'):
+                    rows = self.proxy_model.rowCount()
+                    cols = self.proxy_model.columnCount()
+                    visible_data = []
+                    for row in range(rows):
+                        row_data = [self.proxy_model.index(row, col).data() for col in range(cols)]
+                        visible_data.append(row_data)
+
+                    header_labels = [self.proxy_model.headerData(i, Qt.Horizontal) for i in range(cols)]
+                    export_df = pd.DataFrame(visible_data, columns=header_labels)
+                    export_df.to_excel(writer, sheet_name='Filtered Line Items', index=False)
+
+                # Sheet 2: Per-Order Summary
                 self.results_data['order_summary_df'].to_excel(writer, sheet_name='Order Summaries', index=False)
+
+                # Sheet 3: Grand Totals
                 totals_df = pd.DataFrame([self.results_data['totals']])
                 totals_df.to_excel(writer, sheet_name='Grand Totals', index=False)
-                for sheet_name in writer.sheets:
-                    worksheet = writer.sheets[sheet_name]
-                    for column in worksheet.columns:
-                        max_length = max(len(str(cell.value)) for cell in column if cell.value)
-                        adjusted_width = (max_length + 2)
-                        worksheet.column_dimensions[column[0].column_letter].width = adjusted_width
+
             QMessageBox.information(self, "Success", f"Data successfully exported to {save_path}")
         except Exception as e:
             QMessageBox.critical(self, "Export Error", f"An error occurred during export: {e}")
