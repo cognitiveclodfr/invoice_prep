@@ -1,14 +1,10 @@
 import pandas as pd
 from datetime import datetime
 
-# Default service SKUs to always exclude
-VIRTUAL_SKUS_TO_EXCLUDE = ['parcel-protection']
-
-def calculate_costs(filepath, first_sku_cost, next_sku_cost, unit_cost, eur_to_bgn_rate,
+def calculate_costs(filepath, first_sku_cost, next_sku_cost, unit_cost,
                     start_date_str=None, end_date_str=None, excluded_skus=None):
     """
-    Processes a Shopify CSV file to calculate fulfillment costs.
-    Applies all filters sequentially before performing calculations.
+    Processes a Shopify CSV file to calculate fulfillment costs based on the new TZ.
     """
     if excluded_skus is None:
         excluded_skus = []
@@ -16,97 +12,101 @@ def calculate_costs(filepath, first_sku_cost, next_sku_cost, unit_cost, eur_to_b
     try:
         df = pd.read_csv(filepath)
 
-        required_columns = ['Fulfillment Status', 'Name', 'Lineitem quantity', 'Lineitem sku', 'Lineitem name', 'Fulfilled at']
+        # F1: Check for required columns from TZ
+        required_columns = ['Name', 'Fulfilled at', 'Lineitem sku', 'Lineitem quantity']
         for col in required_columns:
             if col not in df.columns:
-                return {'error': f'Missing required column: {col}'}
+                return {'error': f'Помилка: у файлі відсутній обов\'язковий стовпець: {col}'}
 
-        # --- Sequentially build the filtered DataFrame ---
+        # --- Data Cleaning and Filtering ---
 
-        # 1. Filter by status
-        processed_df = df[df['Fulfillment Status'] == 'fulfilled'].copy()
+        # 1. Handle 'Fulfilled at' date column
+        # Convert to datetime, coercing errors will result in NaT (Not a Time)
+        df['Fulfilled at'] = pd.to_datetime(df['Fulfilled at'], errors='coerce')
+        # F3.1: Ignore orders without a valid fulfillment date
+        df.dropna(subset=['Fulfilled at'], inplace=True)
 
-        # 2. Filter by date range (if provided)
+        # Ensure timezone-naive for comparison
+        if pd.api.types.is_datetime64_any_dtype(df['Fulfilled at']):
+            if df['Fulfilled at'].dt.tz is not None:
+                df['Fulfilled at'] = df['Fulfilled at'].dt.tz_localize(None)
+
+        # 2. Filter by date range
         if start_date_str and end_date_str:
-            processed_df['Fulfilled at'] = pd.to_datetime(processed_df['Fulfilled at'], errors='coerce')
-            processed_df.dropna(subset=['Fulfilled at'], inplace=True)
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+            end_date = datetime.strptime(end_date_str, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
+            df = df[(df['Fulfilled at'] >= start_date) & (df['Fulfilled at'] <= end_date)].copy()
 
-            if pd.api.types.is_datetime64_any_dtype(processed_df['Fulfilled at']):
-                if processed_df['Fulfilled at'].dt.tz is not None:
-                    processed_df['Fulfilled at'] = processed_df['Fulfilled at'].dt.tz_localize(None)
+        # 3. Filter by excluded SKUs (user-provided list only)
+        if excluded_skus:
+            df = df[~df['Lineitem sku'].isin(excluded_skus)]
 
-                start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
-                end_date = datetime.strptime(end_date_str, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
+        if df.empty:
+            return {
+                'order_details': [],
+                'summary': {
+                    'total_orders': 0, 'total_units': 0, 'total_cost': 0.0,
+                    'cost_from_first_sku': 0.0, 'cost_from_next_sku': 0.0, 'cost_from_unit': 0.0
+                },
+                'error': None
+            }
 
-                # Apply the date filter directly to the DataFrame
-                processed_df = processed_df[
-                    (processed_df['Fulfilled at'] >= start_date) &
-                    (processed_df['Fulfilled at'] <= end_date)
-                ].copy()
-
-        # 3. Combine and filter by excluded SKUs
-        final_excluded_skus = excluded_skus + VIRTUAL_SKUS_TO_EXCLUDE
-        if final_excluded_skus:
-            processed_df = processed_df[~processed_df['Lineitem sku'].isin(final_excluded_skus)]
-
-        # --- All filters applied. Now perform calculations on the final processed_df ---
-        if processed_df.empty:
-            return {'totals': {'processed_orders_count': 0, 'total_units': 0, 'total_cost_bgn': 0.0, 'total_cost_eur': 0.0},
-                    'order_summary_df': pd.DataFrame(),
-                    'line_item_df': pd.DataFrame(),
-                    'error': None}
-
-        # --- Calculations ---
-        order_summaries = []
-        for order_name, order_group in processed_df.groupby('Name'):
-            unique_skus = order_group['Lineitem sku'].nunique()
-            order_units = order_group['Lineitem quantity'].sum()
-
-            order_cost_bgn = 0
-            if unique_skus > 0:
-                order_cost_bgn += first_sku_cost
-            if unique_skus > 1:
-                order_cost_bgn += (unique_skus - 1) * next_sku_cost
-            order_cost_bgn += order_units * unit_cost
-
-            order_summaries.append({
-                'Order #': order_name,
-                'Unique SKUs': unique_skus,
-                'Total Units': int(order_units),
-                'Order Cost (BGN)': round(order_cost_bgn, 2)
-            })
-
-        order_summary_df = pd.DataFrame(order_summaries) if order_summaries else pd.DataFrame()
-
-        # --- Final Data Preparation ---
-        total_cost_bgn = order_summary_df['Order Cost (BGN)'].sum() if not order_summary_df.empty else 0
-        total_units = order_summary_df['Total Units'].sum() if not order_summary_df.empty else 0
-        final_order_count = processed_df['Name'].nunique()
-
-        totals = {
-            'processed_orders_count': final_order_count,
-            'total_units': int(total_units),
-            'total_cost_bgn': round(total_cost_bgn, 2),
-            'total_cost_eur': round(total_cost_bgn / eur_to_bgn_rate, 2) if eur_to_bgn_rate else 0
+        # --- Calculations per Order ---
+        order_details = []
+        total_summary = {
+            'total_orders': 0, 'total_units': 0, 'total_cost': 0.0,
+            'cost_from_first_sku': 0.0, 'cost_from_next_sku': 0.0, 'cost_from_unit': 0.0
         }
 
-        line_item_df = processed_df[['Name', 'Fulfilled at', 'Lineitem sku', 'Lineitem name', 'Lineitem quantity']].copy()
-        line_item_df.rename(columns={
-            'Name': 'Order #',
-            'Fulfilled at': 'Fulfilled Date',
-            'Lineitem sku': 'SKU',
-            'Lineitem name': 'Product Name',
-            'Lineitem quantity': 'Quantity'
-        }, inplace=True)
+        # Group by order name ('Name' column)
+        for order_name, order_group in df.groupby('Name'):
+            # F3.4: Calculate N and Q for the order
+            N = order_group['Lineitem sku'].nunique()
+            Q = order_group['Lineitem quantity'].sum()
+
+            if N == 0:
+                continue # Skip orders that have no SKUs left after filtering
+
+            # F3.5: Apply the calculation formula
+            cost_first = 0
+            cost_next = 0
+            cost_unit = Q * unit_cost
+
+            if N == 1:
+                cost_first = first_sku_cost
+            elif N > 1:
+                cost_first = first_sku_cost
+                cost_next = (N - 1) * next_sku_cost
+
+            total_cost = cost_first + cost_next + cost_unit
+
+            order_details.append({
+                'Номер замовлення': order_name,
+                'Дата виконання': order_group['Fulfilled at'].iloc[0].strftime('%Y-%m-%d'),
+                'Кількість SKU': N,
+                'Загальна кількість одиниць': int(Q),
+                'Підсумкова вартість': round(total_cost, 2)
+            })
+
+            # Aggregate summary data
+            total_summary['total_orders'] += 1
+            total_summary['total_units'] += int(Q)
+            total_summary['total_cost'] += total_cost
+            total_summary['cost_from_first_sku'] += cost_first
+            total_summary['cost_from_next_sku'] += cost_next
+            total_summary['cost_from_unit'] += cost_unit
+
+        # Round the final summary costs
+        for key in ['total_cost', 'cost_from_first_sku', 'cost_from_next_sku', 'cost_from_unit']:
+            total_summary[key] = round(total_summary[key], 2)
 
         return {
-            'totals': totals,
-            'order_summary_df': order_summary_df,
-            'line_item_df': line_item_df,
+            'order_details': order_details,
+            'summary': total_summary,
             'error': None
         }
 
     except FileNotFoundError:
-        return {'error': 'The specified file was not found.'}
+        return {'error': 'Помилка: вказаний файл не знайдено.'}
     except Exception as e:
-        return {'error': f'An unexpected error occurred: {str(e)}'}
+        return {'error': f'Виникла неочікувана помилка: {str(e)}'}

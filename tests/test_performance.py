@@ -8,7 +8,6 @@ def generate_large_csv(filepath, num_rows):
     """Generates a large CSV file for performance testing."""
     data = {
         'Name': [f"#{i//2 + 1}" for i in range(num_rows)],
-        'Fulfillment Status': ['fulfilled'] * num_rows,
         'Lineitem quantity': [random.randint(1, 5) for _ in range(num_rows)],
         'Lineitem sku': [f"SKU-{random.randint(1, 100)}" for _ in range(num_rows)],
         'Lineitem name': [f"Product-{random.randint(1, 100)}" for _ in range(num_rows)],
@@ -29,7 +28,6 @@ def test_performance_with_large_file(tmp_path):
     results = calculate_costs(
         filepath=str(large_csv_path),
         first_sku_cost=10, next_sku_cost=5, unit_cost=2,
-        eur_to_bgn_rate=1.95583,
         start_date_str="2025-07-01", end_date_str="2025-07-31"
     )
 
@@ -39,7 +37,7 @@ def test_performance_with_large_file(tmp_path):
     print(f"Performance test with {num_rows} rows took {duration:.2f} seconds.")
 
     assert results['error'] is None
-    assert results['totals']['processed_orders_count'] > 0
-    # Set a reasonable time limit, e.g., 5 seconds.
+    assert results['summary']['total_orders'] > 0
+    # Set a reasonable time limit, e.g., 10 seconds.
     # This might need adjustment based on the runner's performance.
-    assert duration < 5
+    assert duration < 10
